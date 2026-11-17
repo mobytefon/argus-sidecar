@@ -47,7 +47,7 @@ checkout.
 | | Image user `10000:10000` (default) | `ARGUS_USER=0:0` (rootless Docker) |
 |---|---|---|
 | Who it is on the host | an unprivileged UID (rootful) or a sub-UID (rootless) | rootless: the user running `dockerd`; rootful: real root, with every capability dropped |
-| Model directory | readable by UID 10000 (`chmod -R a+rX`, or `chown -R 10000:10000`) | any directory owned by that user; `0700`/`0600` is fine |
+| Model directory | readable by UID 10000 (`chmod -R a+rX`, or `chown -R 10000:10000`) | rootless: any directory owned by that user, `0700`/`0600` is fine; rootful (Docker Desktop too): root without capabilities cannot read other users' private files, so `chmod 0755` the directory and `0644` the files, or `chown -R root` |
 | Socket | `srw-rw----` 10000:10000: Caddy must run as 10000, or as root | `srw-rw----` root: Caddy must run as root (`0:0`) |
 
 The container drops every capability, so the sidecar relies on file
