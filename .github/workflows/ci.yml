@@ -31,8 +31,8 @@ jobs:
           set -eu
           sudo cp -r model /tmp/ci-model
           sudo chown -R root:root /tmp/ci-model
-          sudo chmod 0700 /tmp/ci-model
           sudo chmod 0600 /tmp/ci-model/*
+          sudo chmod 0700 /tmp/ci-model
           docker volume create ci-run
           docker run -d --name ci-sidecar --user 0:0 --cap-drop ALL --read-only \
             --security-opt no-new-privileges:true --network none --tmpfs /tmp \
