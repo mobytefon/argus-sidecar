@@ -15,7 +15,7 @@ import sys
 import grpc
 
 from argus_sidecar._proto import argus_pb2, argus_pb2_grpc
-from argus_sidecar.server import unix_target
+from argus_sidecar.server import HEALTHCHECK_METADATA, unix_target
 
 
 def main() -> int:
@@ -26,6 +26,8 @@ def main() -> int:
             resp = stub.Classify(
                 argus_pb2.ClassifyRequest(method="GET", uri="/healthz"),
                 timeout=1.0,
+                # Keeps the Docker healthcheck (every 10 s) out of the request log.
+                metadata=((HEALTHCHECK_METADATA, "1"),),
             )
         p = float(resp.risk_score)
         if not math.isfinite(p) or not 0.0 <= p <= 1.0:

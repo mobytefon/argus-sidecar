@@ -26,7 +26,7 @@ there.
 Requirements: Docker Engine with Compose v2, Linux amd64.
 
 ```sh
-git clone --branch v0.2.1 https://github.com/mobytefon/argus-sidecar.git
+git clone --branch v0.2.2 https://github.com/mobytefon/argus-sidecar.git
 cd argus-sidecar
 cp .env.example .env      # ARGUS_MODEL_DIR_HOST=./model uses the bundled model
 docker compose config --quiet
@@ -117,6 +117,7 @@ Rollback: copy the previous bundle back the same way. Keep it around.
 | ARGUS_MIN_REMAINING_MS | 5 | Reject requests with almost-expired deadlines |
 | ORT_INTRA_THREADS | 1 | ONNX threads per session |
 | ARGUS_LOG_LEVEL | INFO | Forwarded to the runtime as LOG_LEVEL |
+| ARGUS_LOG_REQUESTS | all | One log line per ML check: `all`, `attack` (attack verdicts only) or `off` |
 | ARGUS_CPUS / ARGUS_MEM_LIMIT | 2 / 512m | Container limits (rootless Docker enforces them only with cgroup v2 delegation) |
 
 **Load limits.** The Caddy action's `ARGUS_MAX_INFLIGHT` (default 16) must be
@@ -127,6 +128,22 @@ raise one, raise the other, with `ARGUS_WORKERS` and `ARGUS_CPUS`. Inference
 errors return INTERNAL. A deadline limits client waiting, but cannot stop an
 ONNX call already running. Measure capacity and end-to-end latency on the
 deployment host before enabling block.
+
+**Request log.** With `ARGUS_LOG_REQUESTS=all` (the default) every check
+is logged by `argus_sidecar.requests`, one line each:
+
+```
+2026-11-17 07:26:11,593 INFO argus_sidecar.requests check verdict=attack attack_prob=0.999998 threshold=0.998175 ms=0.43 method=GET uri="/products?id=42' UNION SELECT username,password FROM users--" body_bytes=0 run=D_c64
+```
+
+`ms` is the inference time in the sidecar, `run` the model's run name.
+Only the method, the URI (JSON-quoted, cut at 200 characters) and the body
+size are written: never headers, cookies or the body. A request dropped
+because its deadline had almost passed logs `verdict=skipped
+reason=deadline`. The container healthcheck is not logged. On busy hosts use
+`attack` to keep only attack verdicts; Compose rotates the log (3 × 10 MB).
+`docker compose logs -f argus-sidecar | grep verdict=attack` follows the
+detections.
 
 **Keepalive.** The action keeps one gRPC connection open and pings it every
 30 s, also when idle. The server accepts pings down to 10 s apart; with

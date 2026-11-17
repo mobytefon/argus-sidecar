@@ -3,7 +3,7 @@
 # to it.
 services:
   argus-sidecar:
-    image: ghcr.io/mobytefon/argus-sidecar:v0.2.1
+    image: ghcr.io/mobytefon/argus-sidecar:v0.2.2
     build: .
     restart: unless-stopped
     # Must be able to open the socket Caddy connects to: the image user
@@ -28,6 +28,8 @@ services:
       ARGUS_MIN_REMAINING_MS: ${ARGUS_MIN_REMAINING_MS:-5}
       ORT_INTRA_THREADS: ${ORT_INTRA_THREADS:-1}
       LOG_LEVEL: ${ARGUS_LOG_LEVEL:-INFO}
+      # One log line per ML check: all, attack (attack verdicts only) or off.
+      ARGUS_LOG_REQUESTS: ${ARGUS_LOG_REQUESTS:-all}
     volumes:
       # Read-only; copying new files over the host directory hot-reloads the model.
       - ${ARGUS_MODEL_DIR_HOST:?Set ARGUS_MODEL_DIR_HOST to the model directory}:/model:ro

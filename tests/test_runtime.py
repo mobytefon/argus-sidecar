@@ -150,6 +150,64 @@ class RuntimeTests(unittest.TestCase):
         self.assertEqual(dict(response.detections), {"attack": 0.999})
         self.assertEqual(classifier.classify.call_args.kwargs["body"], b"raw")
 
+    def _check(self, mode, is_clean, uri="/login?next=%2F", headers=None, body=b"user=a&pass=secret"):
+        classifier, context = Mock(threshold=0.998175, run="D_c64"), Mock()
+        context.time_remaining.return_value = 1
+        classifier.classify.return_value = {
+            "is_clean": is_clean, "risk_score": 0.1 if is_clean else 0.9999,
+            "detections": {} if is_clean else {"attack": 0.9999}}
+        request = argus_pb2.ClassifyRequest(method="POST", uri=uri, headers=headers or {}, body=body)
+        logger = logging.getLogger("argus_sidecar.requests")
+        if mode == "off":
+            with self.assertNoLogs(logger):
+                ArgusServicer(Mock(current=classifier), 0.005, mode).Classify(request, context)
+            return []
+        with self.assertLogs(logger, level="INFO") as captured:
+            ArgusServicer(Mock(current=classifier), 0.005, mode).Classify(request, context)
+        return captured.output
+
+    def test_request_log_all_records_every_check(self):
+        (clean,) = self._check("all", True)
+        self.assertIn("check verdict=clean attack_prob=0.100000 threshold=0.998175", clean)
+        self.assertIn('method=POST uri="/login?next=%2F" body_bytes=18 run=D_c64', clean)
+        (attack,) = self._check("all", False)
+        self.assertIn("verdict=attack attack_prob=0.999900", attack)
+
+    def test_request_log_attack_only(self):
+        self.assertEqual(len(self._check("attack", False)), 1)
+        logger = logging.getLogger("argus_sidecar.requests")
+        classifier, context = Mock(threshold=0.5, run="r"), Mock()
+        context.time_remaining.return_value = 1
+        classifier.classify.return_value = {"is_clean": True, "risk_score": 0.1, "detections": {}}
+        with self.assertNoLogs(logger):
+            ArgusServicer(Mock(current=classifier), 0.005, "attack").Classify(argus_pb2.ClassifyRequest(), context)
+
+    def test_request_log_off(self):
+        self.assertEqual(self._check("off", False), [])
+
+    def test_request_log_never_holds_headers_or_body_and_escapes_the_uri(self):
+        (line,) = self._check("all", False, uri="/a\nFAKE LOG LINE\r\x1b[31m" + "x" * 300,
+                              headers={"cookie": "session=topsecret"}, body=b"password=hunter2")
+        self.assertNotIn("\n", line)
+        self.assertNotIn("\x1b", line)
+        self.assertIn('uri="/a\\nFAKE LOG LINE\\r\\u001b[31m', line)
+        self.assertIn("\\u2026", line)  # cut at LOG_URI_MAX characters
+        self.assertNotIn("topsecret", line)
+        self.assertNotIn("hunter2", line)
+
+    def test_healthcheck_is_not_logged(self):
+        classifier, context = Mock(threshold=0.5, run="r"), Mock()
+        context.time_remaining.return_value = 1
+        context.invocation_metadata.return_value = (("x-argus-healthcheck", "1"),)
+        classifier.classify.return_value = {"is_clean": True, "risk_score": 0.1, "detections": {}}
+        with self.assertNoLogs(logging.getLogger("argus_sidecar.requests")):
+            ArgusServicer(Mock(current=classifier), 0.005, "all").Classify(
+                argus_pb2.ClassifyRequest(method="GET", uri="/healthz"), context)
+
+    def test_unknown_request_log_mode_is_rejected(self):
+        with self.assertRaises(ValueError):
+            ArgusServicer(Mock(), 0.005, "verbose")
+
     def test_servicer_uses_the_current_model_per_request(self):
         first, second, context = Mock(), Mock(), Mock()
         context.time_remaining.return_value = 1

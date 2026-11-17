@@ -18,10 +18,12 @@ The model is hot-reloaded from the model directory (see model_store.py).
 
 from __future__ import annotations
 
+import json
 import logging
 import math
 import os
 import signal
+import time
 from concurrent import futures
 
 import grpc
@@ -31,6 +33,23 @@ from argus_sidecar.model_store import ModelStore
 from argus_sidecar.socket_lock import socket_lease
 
 log = logging.getLogger("argus_sidecar.server")
+# One line per ML check (ARGUS_LOG_REQUESTS), on its own logger so it can be
+# told apart from service messages.
+request_log = logging.getLogger("argus_sidecar.requests")
+
+LOG_REQUESTS_MODES = ("all", "attack", "off")
+# Characters of the request URI written to the log. Only the method, the URI
+# and the body size are logged: never headers (cookies) or the body itself.
+LOG_URI_MAX = 200
+# gRPC metadata key the container healthcheck sends; its checks are not logged.
+HEALTHCHECK_METADATA = "x-argus-healthcheck"
+
+
+def _is_healthcheck(context) -> bool:
+    try:
+        return any(key == HEALTHCHECK_METADATA for key, _ in context.invocation_metadata() or ())
+    except (TypeError, ValueError):
+        return False
 
 
 def unix_target(socket_path: str) -> str:
@@ -38,18 +57,35 @@ def unix_target(socket_path: str) -> str:
     return "unix://" + socket_path if socket_path.startswith("/") else "unix:" + socket_path
 
 
-class ArgusServicer(argus_pb2_grpc.ArgusSentinelServicer):
-    """store: any object whose `.current` is the active classifier."""
+def _log_uri(uri: str) -> str:
+    """The URI as a JSON string: quoted, control characters escaped (no log
+    injection through a crafted URI), cut at LOG_URI_MAX characters."""
+    cut = uri if len(uri) <= LOG_URI_MAX else uri[:LOG_URI_MAX] + "…"
+    return json.dumps(cut, ensure_ascii=True)
 
-    def __init__(self, store, min_remaining_s: float) -> None:
+
+class ArgusServicer(argus_pb2_grpc.ArgusSentinelServicer):
+    """store: any object whose `.current` is the active classifier.
+
+    log_requests: "all" logs every check, "attack" only attack verdicts,
+    "off" none.
+    """
+
+    def __init__(self, store, min_remaining_s: float, log_requests: str = "all") -> None:
+        if log_requests not in LOG_REQUESTS_MODES:
+            raise ValueError(f"ARGUS_LOG_REQUESTS must be one of {', '.join(LOG_REQUESTS_MODES)}")
         self.store = store
         self.min_remaining_s = min_remaining_s
+        self.log_requests = log_requests
 
     def Classify(self, request, context):  # noqa: N802 (gRPC naming convention)
         if not context.is_active():
             context.abort(grpc.StatusCode.CANCELLED, "request cancelled")
         remaining = context.time_remaining()
         if remaining is not None and remaining < self.min_remaining_s:
+            if self.log_requests == "all":
+                request_log.info("check verdict=skipped reason=deadline remaining_ms=%.1f method=%s uri=%s",
+                                 remaining * 1000, request.method, _log_uri(request.uri))
             context.abort(
                 grpc.StatusCode.DEADLINE_EXCEEDED,
                 f"deadline almost expired ({remaining:.4f}s left)",
@@ -57,6 +93,7 @@ class ArgusServicer(argus_pb2_grpc.ArgusSentinelServicer):
             return  # unreachable, abort() raises
 
         clf = self.store.current  # read once: a concurrent reload cannot split this request
+        start = time.perf_counter()
         try:
             verdict = clf.classify(
                 method=request.method,
@@ -65,9 +102,18 @@ class ArgusServicer(argus_pb2_grpc.ArgusSentinelServicer):
                 body=bytes(request.body),
             )
         except Exception as e:  # noqa: BLE001 — surface every error to the client
-            log.error("Classify failed: %s", type(e).__name__)
+            log.error("Classify failed: %s method=%s uri=%s", type(e).__name__, request.method, _log_uri(request.uri))
             context.abort(grpc.StatusCode.INTERNAL, "inference failed")
             return  # unreachable, abort() raises
+
+        attack = not verdict["is_clean"]
+        if (self.log_requests == "all" or (attack and self.log_requests == "attack")) and not _is_healthcheck(context):
+            request_log.info(
+                "check verdict=%s attack_prob=%.6f threshold=%r ms=%.2f method=%s uri=%s body_bytes=%d run=%s",
+                "attack" if attack else "clean", verdict["risk_score"], getattr(clf, "threshold", None),
+                (time.perf_counter() - start) * 1000, request.method, _log_uri(request.uri),
+                len(request.body), getattr(clf, "run", None),
+            )
 
         return argus_pb2.ClassifyResponse(
             is_clean=verdict["is_clean"],
@@ -90,6 +136,7 @@ def serve() -> None:
     min_remaining_ms = int(os.getenv("ARGUS_MIN_REMAINING_MS", "5"))
     threshold_spec = os.getenv("ARGUS_THRESHOLD", "fpr0.1%")
     reload_interval_s = float(os.getenv("ARGUS_RELOAD_INTERVAL_S", "5"))
+    log_requests = os.getenv("ARGUS_LOG_REQUESTS", "all").strip().lower()
 
     if not 1 <= workers <= 256 or not 1 <= max_concurrent <= 1024:
         raise ValueError("ARGUS_WORKERS must be 1..256 and ARGUS_MAX_CONCURRENT_RPCS 1..1024")
@@ -99,6 +146,8 @@ def serve() -> None:
         raise ValueError("ARGUS_SOCKET_MODE must be 0o600 or 0o660")
     if not math.isfinite(reload_interval_s) or not 0 <= reload_interval_s <= 3600:
         raise ValueError("ARGUS_RELOAD_INTERVAL_S must be 0..3600 (0 disables polling)")
+    if log_requests not in LOG_REQUESTS_MODES:
+        raise ValueError(f"ARGUS_LOG_REQUESTS must be one of {', '.join(LOG_REQUESTS_MODES)}")
 
     # Exits the process when the bundle at startup is broken.
     store = ModelStore(
@@ -128,7 +177,7 @@ def serve() -> None:
         ],
     )
     argus_pb2_grpc.add_ArgusSentinelServicer_to_server(
-        ArgusServicer(store, min_remaining_ms / 1000.0), server
+        ArgusServicer(store, min_remaining_ms / 1000.0, log_requests), server
     )
 
     with socket_lease(socket_path):
@@ -140,8 +189,8 @@ def serve() -> None:
         server.start()
         store.start()
         log.info("listening on %s uid=%d gid=%d mode=%o workers=%d max_concurrent=%d threshold=%r "
-                 "reload_interval_s=%g", bind, os.getuid(), os.getgid(), socket_mode, workers,
-                 max_concurrent, store.current.threshold, reload_interval_s)
+                 "reload_interval_s=%g log_requests=%s", bind, os.getuid(), os.getgid(), socket_mode, workers,
+                 max_concurrent, store.current.threshold, reload_interval_s, log_requests)
 
         def shutdown(signum, _frame):
             log.info("signal %d received, draining", signum)

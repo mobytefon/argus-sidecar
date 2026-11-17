@@ -1,5 +1,5 @@
 # syntax=docker/dockerfile:1.6
-# Standalone build: docker build -t argus-sidecar:v0.2.1 .
+# Standalone build: docker build -t argus-sidecar:v0.2.2 .
 # The model is mounted read-only at /model at runtime; it is not in the image
 # (the repository's model/ directory holds the released bundle).
 FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS protogen
@@ -24,6 +24,6 @@ COPY argus_sidecar/ argus_sidecar/
 COPY --from=protogen /build/generated/ argus_sidecar/_proto/
 LABEL org.opencontainers.image.source="https://github.com/mobytefon/argus-sidecar" org.opencontainers.image.description="Argus Sentinel v4 ML sidecar for the Coraza mlcheck action" org.opencontainers.image.licenses="Apache-2.0"
 USER argus
-ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 ARGUS_MODEL_DIR=/model ARGUS_SOCKET=/run/argus/argus.sock ARGUS_SOCKET_MODE=0o660 ARGUS_THRESHOLD=fpr0.1% ARGUS_WORKERS=4 ARGUS_MAX_CONCURRENT_RPCS=16 ARGUS_RELOAD_INTERVAL_S=5 ARGUS_MIN_REMAINING_MS=5 ORT_INTRA_THREADS=1 LOG_LEVEL=INFO
+ENV PYTHONUNBUFFERED=1 PYTHONDONTWRITEBYTECODE=1 ARGUS_MODEL_DIR=/model ARGUS_SOCKET=/run/argus/argus.sock ARGUS_SOCKET_MODE=0o660 ARGUS_THRESHOLD=fpr0.1% ARGUS_WORKERS=4 ARGUS_MAX_CONCURRENT_RPCS=16 ARGUS_RELOAD_INTERVAL_S=5 ARGUS_MIN_REMAINING_MS=5 ORT_INTRA_THREADS=1 LOG_LEVEL=INFO ARGUS_LOG_REQUESTS=all
 HEALTHCHECK --interval=10s --timeout=2s --start-period=30s --retries=3 CMD python -m argus_sidecar.healthcheck
 CMD ["python", "-m", "argus_sidecar"]

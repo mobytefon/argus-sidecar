@@ -36,7 +36,7 @@ class ComposeTests(unittest.TestCase):
     def test_persisted_example_works_without_shell_exports(self):
         config = self.render()
         service = config["services"]["argus-sidecar"]
-        self.assertEqual(service["image"], "ghcr.io/mobytefon/argus-sidecar:v0.2.1")
+        self.assertEqual(service["image"], "ghcr.io/mobytefon/argus-sidecar:v0.2.2")
         self.assertEqual(service["user"], "10000:10000")
         self.assertEqual(service["network_mode"], "none")
         model = next(v for v in service["volumes"] if v["target"] == "/model")
@@ -74,7 +74,7 @@ class ComposeTests(unittest.TestCase):
         image_env = dict(re.findall(r"(\w+)=(\S+)", env_line))
         compose_env = self.render()["services"]["argus-sidecar"]["environment"]
         for name in ("ARGUS_WORKERS", "ARGUS_MAX_CONCURRENT_RPCS", "ARGUS_RELOAD_INTERVAL_S",
-                     "ARGUS_THRESHOLD", "ARGUS_MIN_REMAINING_MS", "ARGUS_SOCKET"):
+                     "ARGUS_THRESHOLD", "ARGUS_MIN_REMAINING_MS", "ARGUS_SOCKET", "ARGUS_LOG_REQUESTS"):
             with self.subTest(variable=name):
                 self.assertEqual(image_env[name], compose_env[name])
         self.assertNotIn("ARGUS_VERIFY_MANIFEST", image_env)
@@ -86,6 +86,7 @@ class ComposeTests(unittest.TestCase):
             "ARGUS_WORKERS": "2", "ARGUS_MAX_CONCURRENT_RPCS": "4",
             "ARGUS_MIN_REMAINING_MS": "20", "ORT_INTRA_THREADS": "2",
             "ARGUS_LOG_LEVEL": "DEBUG", "ARGUS_SOCKET_VOLUME": "argus-custom-volume",
+            "ARGUS_LOG_REQUESTS": "attack",
             "ARGUS_USER": "0:0", "ARGUS_CPUS": "4", "ARGUS_MEM_LIMIT": "1g",
         }
         config = self.render("\n".join(f"{k}={v}" for k, v in custom.items()) + "\n")
