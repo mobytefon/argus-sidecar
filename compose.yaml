@@ -1,8 +1,15 @@
+# Standalone sidecar, for a Caddy that is not MOBI-WAF. MOBI-WAF runs the
+# sidecar itself (its docker-compose.argus.yml): do not run this stack next
+# to it.
 services:
   argus-sidecar:
-    image: ghcr.io/mobytefon/argus-sidecar:v0.2.0
+    image: ghcr.io/mobytefon/argus-sidecar:v0.2.1
     build: .
     restart: unless-stopped
+    # Must be able to open the socket Caddy connects to: the image user
+    # 10000:10000 (with Caddy as 10000 or root), or 0:0 under rootless Docker,
+    # where it is the host user and reads a model directory in its home.
+    user: "${ARGUS_USER:-10000:10000}"
     # The service only talks over the Unix socket in the shared volume.
     network_mode: none
     read_only: true
@@ -25,12 +32,12 @@ services:
       # Read-only; copying new files over the host directory hot-reloads the model.
       - ${ARGUS_MODEL_DIR_HOST:?Set ARGUS_MODEL_DIR_HOST to the model directory}:/model:ro
       - argus-run:/run/argus
-    cpus: 2
-    mem_limit: 512m
+    cpus: ${ARGUS_CPUS:-2}
+    mem_limit: ${ARGUS_MEM_LIMIT:-512m}
     pids_limit: 128
     logging:
       driver: json-file
       options: {max-size: "10m", max-file: "3"}
 volumes:
   argus-run:
-    name: ${ARGUS_SOCKET_VOLUME:-ingressi-argus-run}
+    name: ${ARGUS_SOCKET_VOLUME:-argus-run}

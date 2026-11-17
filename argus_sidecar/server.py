@@ -118,6 +118,13 @@ def serve() -> None:
             ("grpc.keepalive_time_ms", 30_000),
             ("grpc.keepalive_timeout_ms", 10_000),
             ("grpc.keepalive_permit_without_calls", 1),
+            # The mlcheck client pings every 30 s, also while idle. gRPC's
+            # default ping policy accepts one idle ping per 5 minutes and
+            # answers repeated early ones with GOAWAY "too_many_pings",
+            # dropping the connection Caddy keeps open. Accept pings down to
+            # 10 s apart and never strike.
+            ("grpc.http2.min_ping_interval_without_data_ms", 10_000),
+            ("grpc.http2.max_ping_strikes", 0),
         ],
     )
     argus_pb2_grpc.add_ArgusSentinelServicer_to_server(
@@ -132,8 +139,9 @@ def serve() -> None:
         os.chmod(socket_path, socket_mode)
         server.start()
         store.start()
-        log.info("listening on %s workers=%d max_concurrent=%d threshold=%.6f reload_interval_s=%g",
-                 bind, workers, max_concurrent, store.current.threshold, reload_interval_s)
+        log.info("listening on %s uid=%d gid=%d mode=%o workers=%d max_concurrent=%d threshold=%r "
+                 "reload_interval_s=%g", bind, os.getuid(), os.getgid(), socket_mode, workers,
+                 max_concurrent, store.current.threshold, reload_interval_s)
 
         def shutdown(signum, _frame):
             log.info("signal %d received, draining", signum)

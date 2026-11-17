@@ -18,8 +18,36 @@ jobs:
         run: python3 -m unittest discover -s tests -p test_compose.py -v
       - name: Build code-only image
         run: docker build -t argus-sidecar:test .
-      - name: Runtime tests without private model
+      - name: Runtime tests (fake bundle, hot reload)
         run: docker run --rm --entrypoint python -e PYTHONPATH=/app -v "$PWD/tests:/tests:ro" argus-sidecar:test -m unittest discover -s /tests -p test_runtime.py -v
+      - name: Smoke test with the bundled model
+        run: docker run --rm --entrypoint python -e PYTHONPATH=/app -v "$PWD/tests:/tests:ro" -v "$PWD/model:/model:ro" argus-sidecar:test /tests/smoke_test.py --model-dir /model
+      - name: Serve as 0:0 without capabilities (rootless Docker layout)
+        # Under rootless Docker the sidecar runs as 0:0, which is the host user
+        # owning the model directory; every capability is dropped. The model
+        # files here are root-only (0700/0600) to prove ownership alone is
+        # enough, and a second root container (like Caddy) calls the socket.
+        run: |
+          set -eu
+          sudo cp -r model /tmp/ci-model
+          sudo chown -R root:root /tmp/ci-model
+          sudo chmod 0700 /tmp/ci-model
+          sudo chmod 0600 /tmp/ci-model/*
+          docker volume create ci-run
+          docker run -d --name ci-sidecar --user 0:0 --cap-drop ALL --read-only \
+            --security-opt no-new-privileges:true --network none --tmpfs /tmp \
+            -v ci-run:/run/argus -v /tmp/ci-model:/model:ro argus-sidecar:test
+          status=starting
+          for _ in $(seq 1 30); do
+            status=$(docker inspect -f '{{.State.Health.Status}}' ci-sidecar)
+            [ "$status" = healthy ] && break
+            sleep 2
+          done
+          docker logs ci-sidecar
+          test "$status" = healthy
+          docker run --rm --user 0:0 --network none -v ci-run:/run/argus -v "$PWD/tests:/tests:ro" \
+            -e PYTHONPATH=/app --entrypoint python argus-sidecar:test /tests/e2e_client.py
+          docker rm -f ci-sidecar
       - name: Publish versioned image
         if: startsWith(github.ref, 'refs/tags/v')
         env:

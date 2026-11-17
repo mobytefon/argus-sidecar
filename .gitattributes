@@ -3,3 +3,7 @@
 *.py text eol=lf
 *.proto text eol=lf
 Dockerfile text eol=lf
+# The model bundle is kept byte for byte as trained and exported.
+model/* -text
+model/README.md text eol=lf
+*.onnx binary

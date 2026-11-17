@@ -155,7 +155,7 @@ class ArgusClassifier:
         self.warmup()
 
         log.info(
-            "argus model ready: version=%s run=%s threshold=%.6f (spec=%s) max_seq_len=%s",
+            "argus model ready: version=%s run=%s threshold=%r (spec=%s) max_seq_len=%s",
             self.version, self.run, self.threshold, threshold, self.config.get("max_seq_len"),
         )
 

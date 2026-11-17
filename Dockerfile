@@ -1,6 +1,7 @@
 # syntax=docker/dockerfile:1.6
-# Standalone build: docker build -t argus-sidecar:v0.2.0 .
-# Model artifacts are mounted read-only at runtime; never published in this image.
+# Standalone build: docker build -t argus-sidecar:v0.2.1 .
+# The model is mounted read-only at /model at runtime; it is not in the image
+# (the repository's model/ directory holds the released bundle).
 FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258 AS protogen
 WORKDIR /build
 RUN pip install --no-cache-dir grpcio-tools==1.84.0
@@ -10,7 +11,11 @@ RUN mkdir -p generated && python -m grpc_tools.protoc -I proto --python_out=gene
 FROM python:3.12-slim-bookworm@sha256:34386ef0cb081344d7ec1c103ba398e6e9f64e9ab3a1509accc92a4e24a07258
 ARG PUID=10000
 ARG PGID=10000
-RUN groupadd -g ${PGID} argus && useradd -r -u ${PUID} -g argus -m argus && mkdir -p /run/argus /model && chown argus:argus /run/argus && touch /run/argus/.keep && chown argus:argus /run/argus/.keep
+# /run/argus is world-writable with the sticky bit (like /tmp): a fresh socket
+# volume takes this mode from whichever container mounts it first, and the
+# sidecar may run as the image user or as 0:0 (rootless Docker, where it is
+# the host user) with every capability dropped, so it can rely on no owner.
+RUN groupadd -g ${PGID} argus && useradd -r -u ${PUID} -g argus -m argus && mkdir -p /run/argus /model && chmod 1777 /run/argus
 RUN apt-get update && apt-get install -y --no-install-recommends libgomp1 && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY requirements.txt requirements.lock ./

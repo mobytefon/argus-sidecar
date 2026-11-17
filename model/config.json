@@ -1,0 +1,260 @@
+{
+  "version": "v4-binary",
+  "run": "D_c64",
+  "labels": {
+    "0": "clean",
+    "1": "attack"
+  },
+  "input_format": "{METHOD} {uri} [UA] {ua} [REF] {referer} [CK] {cookie} [BODY] {body}",
+  "field_caps": {
+    "uri": 512,
+    "ua": 160,
+    "referer": 160,
+    "cookie": 160,
+    "body": 512
+  },
+  "max_seq_len": 256,
+  "vocab_size": 4096,
+  "onnx": {
+    "file": "model.onnx",
+    "opset": 17,
+    "inputs": {
+      "input_ids": "int64 [batch, seq]",
+      "attention_mask": "int64 [batch, seq]"
+    },
+    "output": "attack_prob float32 [batch, 1] (sigmoid)"
+  },
+  "thresholds": {
+    "0.5": 0.5,
+    "fpr0.1%": 0.998175,
+    "fpr0.5%": 0.893281,
+    "fpr1%": 0.59351
+  },
+  "thresholds_note": "fprX% = ngưỡng chọn trên tập val sao cho FPR trên request sạch <= X%. Dự đoán attack nếu attack_prob > threshold.",
+  "model_config": {
+    "vocab_size": 4096,
+    "embedding_dim": 64,
+    "channels": 64,
+    "kernel_size": 3,
+    "block_kernel_size": 3,
+    "separable": false,
+    "dilations": [
+      1,
+      2,
+      4,
+      8
+    ],
+    "mlp_hidden": 64,
+    "max_seq_len": 256
+  },
+  "metrics": {
+    "val": {
+      "n": 3789,
+      "roc_auc": 0.98679,
+      "pr_auc": 0.98981,
+      "tpr@fpr0.1%": 0.8742,
+      "tpr@fpr0.5%": 0.9064,
+      "tpr@fpr1%": 0.9202
+    },
+    "test": {
+      "n": 3592,
+      "roc_auc": 0.98951,
+      "pr_auc": 0.99159,
+      "tpr@fpr0.1%": 0.863,
+      "tpr@fpr0.5%": 0.8974,
+      "tpr@fpr1%": 0.9176
+    },
+    "test_by_source": {
+      "csic": {
+        "n": 2468,
+        "roc_auc": 0.98467,
+        "pr_auc": 0.99159,
+        "tpr@fpr0.1%": 0.8522,
+        "tpr@fpr0.5%": 0.8885,
+        "tpr@fpr1%": 0.8958
+      },
+      "parquet": {
+        "n": 1124,
+        "roc_auc": 0.99892,
+        "pr_auc": 0.99776,
+        "tpr@fpr0.1%": 0.9778,
+        "tpr@fpr0.5%": 0.981,
+        "tpr@fpr1%": 0.981
+      }
+    },
+    "operating_points": {
+      "0.5": {
+        "threshold": 0.5,
+        "val": {
+          "tpr": 0.9234,
+          "fpr": 0.01212,
+          "precision": 0.987,
+          "f1": 0.9541,
+          "tp": 1747,
+          "fp": 23,
+          "fn": 145,
+          "tn": 1874
+        },
+        "test": {
+          "tpr": 0.9192,
+          "fpr": 0.01193,
+          "precision": 0.9877,
+          "f1": 0.9522,
+          "tp": 1684,
+          "fp": 21,
+          "fn": 148,
+          "tn": 1739
+        },
+        "test_csic": {
+          "tpr": 0.909,
+          "fpr": 0.02206,
+          "precision": 0.985,
+          "f1": 0.9455,
+          "tp": 1378,
+          "fp": 21,
+          "fn": 138,
+          "tn": 931
+        },
+        "test_parquet": {
+          "tpr": 0.9684,
+          "fpr": 0.0,
+          "precision": 1.0,
+          "f1": 0.9839,
+          "tp": 306,
+          "fp": 0,
+          "fn": 10,
+          "tn": 808
+        }
+      },
+      "fpr0.1%": {
+        "threshold": 0.998175,
+        "val": {
+          "tpr": 0.8742,
+          "fpr": 0.00053,
+          "precision": 0.9994,
+          "f1": 0.9326,
+          "tp": 1654,
+          "fp": 1,
+          "fn": 238,
+          "tn": 1896
+        },
+        "test": {
+          "tpr": 0.8745,
+          "fpr": 0.00114,
+          "precision": 0.9988,
+          "f1": 0.9325,
+          "tp": 1602,
+          "fp": 2,
+          "fn": 230,
+          "tn": 1758
+        },
+        "test_csic": {
+          "tpr": 0.8786,
+          "fpr": 0.0021,
+          "precision": 0.9985,
+          "f1": 0.9347,
+          "tp": 1332,
+          "fp": 2,
+          "fn": 184,
+          "tn": 950
+        },
+        "test_parquet": {
+          "tpr": 0.8544,
+          "fpr": 0.0,
+          "precision": 1.0,
+          "f1": 0.9215,
+          "tp": 270,
+          "fp": 0,
+          "fn": 46,
+          "tn": 808
+        }
+      },
+      "fpr0.5%": {
+        "threshold": 0.893281,
+        "val": {
+          "tpr": 0.9064,
+          "fpr": 0.00474,
+          "precision": 0.9948,
+          "f1": 0.9486,
+          "tp": 1715,
+          "fp": 9,
+          "fn": 177,
+          "tn": 1888
+        },
+        "test": {
+          "tpr": 0.9045,
+          "fpr": 0.00739,
+          "precision": 0.9922,
+          "f1": 0.9463,
+          "tp": 1657,
+          "fp": 13,
+          "fn": 175,
+          "tn": 1747
+        },
+        "test_csic": {
+          "tpr": 0.8991,
+          "fpr": 0.01366,
+          "precision": 0.9906,
+          "f1": 0.9426,
+          "tp": 1363,
+          "fp": 13,
+          "fn": 153,
+          "tn": 939
+        },
+        "test_parquet": {
+          "tpr": 0.9304,
+          "fpr": 0.0,
+          "precision": 1.0,
+          "f1": 0.9639,
+          "tp": 294,
+          "fp": 0,
+          "fn": 22,
+          "tn": 808
+        }
+      },
+      "fpr1%": {
+        "threshold": 0.59351,
+        "val": {
+          "tpr": 0.9202,
+          "fpr": 0.00949,
+          "precision": 0.9898,
+          "f1": 0.9537,
+          "tp": 1741,
+          "fp": 18,
+          "fn": 151,
+          "tn": 1879
+        },
+        "test": {
+          "tpr": 0.9159,
+          "fpr": 0.00909,
+          "precision": 0.9906,
+          "f1": 0.9518,
+          "tp": 1678,
+          "fp": 16,
+          "fn": 154,
+          "tn": 1744
+        },
+        "test_csic": {
+          "tpr": 0.9063,
+          "fpr": 0.01681,
+          "precision": 0.9885,
+          "f1": 0.9456,
+          "tp": 1374,
+          "fp": 16,
+          "fn": 142,
+          "tn": 936
+        },
+        "test_parquet": {
+          "tpr": 0.962,
+          "fpr": 0.0,
+          "precision": 1.0,
+          "f1": 0.9806,
+          "tp": 304,
+          "fp": 0,
+          "fn": 12,
+          "tn": 808
+        }
+      }
+    }
+  }
+}

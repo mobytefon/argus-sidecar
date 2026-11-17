@@ -103,7 +103,7 @@ class ModelStore:
         self.current = clf
         self._loaded_sig = sig
         self._failed_sig = None
-        log.info("model reloaded version=%s run=%s threshold=%.6f",
+        log.info("model reloaded version=%s run=%s threshold=%r",
                  getattr(clf, "version", None), getattr(clf, "run", None), clf.threshold)
         return True
 

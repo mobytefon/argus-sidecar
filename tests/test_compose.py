@@ -36,12 +36,13 @@ class ComposeTests(unittest.TestCase):
     def test_persisted_example_works_without_shell_exports(self):
         config = self.render()
         service = config["services"]["argus-sidecar"]
-        self.assertEqual(service["image"], "ghcr.io/mobytefon/argus-sidecar:v0.2.0")
+        self.assertEqual(service["image"], "ghcr.io/mobytefon/argus-sidecar:v0.2.1")
+        self.assertEqual(service["user"], "10000:10000")
         self.assertEqual(service["network_mode"], "none")
         model = next(v for v in service["volumes"] if v["target"] == "/model")
-        self.assertTrue(model["source"].replace("\\", "/").endswith("/opt/argus/models/v4"))
+        self.assertTrue(model["source"].replace("\\", "/").endswith("/model"))
         self.assertTrue(model["read_only"])
-        self.assertEqual(config["volumes"]["argus-run"]["name"], "ingressi-argus-run")
+        self.assertEqual(config["volumes"]["argus-run"]["name"], "argus-run")
         env = service["environment"]
         self.assertEqual(env["ARGUS_SOCKET"], "/run/argus/argus.sock")
         self.assertEqual(env["ARGUS_WORKERS"], "4")
@@ -55,7 +56,7 @@ class ComposeTests(unittest.TestCase):
         with tempfile.TemporaryDirectory(prefix="argus-compose-") as directory:
             root = Path(directory)
             shutil.copyfile(ROOT / "compose.yaml", root / "compose.yaml")
-            (root / ".env").write_text("ARGUS_MODEL_DIR_HOST=/opt/argus/models/v4\n", encoding="utf-8")
+            (root / ".env").write_text("ARGUS_MODEL_DIR_HOST=./model\n", encoding="utf-8")
             env = {k: v for k, v in os.environ.items()
                    if not k.upper().startswith(("ARGUS_", "ORT_", "COMPOSE_"))}
             result = subprocess.run(
@@ -85,12 +86,20 @@ class ComposeTests(unittest.TestCase):
             "ARGUS_WORKERS": "2", "ARGUS_MAX_CONCURRENT_RPCS": "4",
             "ARGUS_MIN_REMAINING_MS": "20", "ORT_INTRA_THREADS": "2",
             "ARGUS_LOG_LEVEL": "DEBUG", "ARGUS_SOCKET_VOLUME": "argus-custom-volume",
+            "ARGUS_USER": "0:0", "ARGUS_CPUS": "4", "ARGUS_MEM_LIMIT": "1g",
         }
         config = self.render("\n".join(f"{k}={v}" for k, v in custom.items()) + "\n")
         actual = config["services"]["argus-sidecar"]["environment"]
         for name, value in custom.items():
+            service = config["services"]["argus-sidecar"]
             if name == "ARGUS_SOCKET_VOLUME":
                 self.assertEqual(config["volumes"]["argus-run"]["name"], value)
+            elif name == "ARGUS_USER":
+                self.assertEqual(service["user"], value)
+            elif name == "ARGUS_CPUS":
+                self.assertEqual(float(service["cpus"]), 4.0)
+            elif name == "ARGUS_MEM_LIMIT":
+                self.assertEqual(int(service["mem_limit"]), 1 << 30)
             else:
                 target = "LOG_LEVEL" if name == "ARGUS_LOG_LEVEL" else name
                 with self.subTest(variable=name):
